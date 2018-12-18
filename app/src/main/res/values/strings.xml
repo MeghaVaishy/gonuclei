@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">DemoApp</string>
+    <string name="no_results_found">No Results found</string>
+    <string name="enter_search_text">Enter Search Text</string>
+    <string name="title_activity_login">LoginActivity</string>
+    <string name="biometric_title">Login</string>
+    <string name="biometric_subtitle">Login to your Osta account</string>
+    <string name="biometric_description">Place your finger on the device home button to verify your identity</string>
+    <string name="biometric_negative_button_text">CANCEL</string>
 </resources>
