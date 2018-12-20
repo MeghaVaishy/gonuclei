@@ -1,6 +1,8 @@
 package com.example.meghavaishy.demoapp.view;
 
 import android.annotation.TargetApi;
+import android.app.Activity;
+import android.app.KeyguardManager;
 import android.content.DialogInterface;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.fingerprint.FingerprintManager;
@@ -50,6 +52,7 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
     private Button login;
     private KeyStore keyStore;
     private Cipher cipher;
+    //  KEY_NAME is used to reference and find the generated key.
     private static final String KEY_NAME = "test";
     private BiometricPrompt mBiometricPrompt;
     private String mToBeSignedMessage;
@@ -109,7 +112,6 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
     @RequiresApi(api = Build.VERSION_CODES.P)
     private void displayBiometricPrompt() {
 
-        // Generate keypair and init signature
         Signature signature;
         try {
             // Before generating a key pair, we have to check enrollment of biometrics on the device
@@ -126,6 +128,7 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
                     .append("12345")
                     .toString();
 
+            // Generate keypair and initialize signature
             signature = initSignature(KEY_NAME);
         } catch (Exception e) {
             // to catch  Runtime exception like  At least one fingerprint must be enrolled to create keys requiring user authentication for every use
@@ -157,11 +160,14 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
     }
 
     private Signature initSignature(String keyName) throws Exception {
+
         KeyPair keyPair = getKeyPair(keyName);
 
         if (keyPair != null) {
             Signature signature = Signature.getInstance("SHA256withECDSA");
             signature.initSign(keyPair.getPrivate());
+//            String signatureString = Base64.encodeToString(signature.sign(), Base64.URL_SAFE);
+//            Toast.makeText(this,signatureString,Toast.LENGTH_SHORT).show();
             return signature;
         }
         return null;
@@ -192,10 +198,12 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
                 .setDigests(KeyProperties.DIGEST_SHA256,
                         KeyProperties.DIGEST_SHA384,
                         KeyProperties.DIGEST_SHA512)
+                //setUserAuthenticationRequired is true a developer can ensure that the generated key is usable only after a legitimate user has touched the fingerprint reader sensor
                 .setUserAuthenticationRequired(true)
                 // Generated keys will be invalidated if the biometric templates are added more to user device
                 .setInvalidatedByBiometricEnrollment(invalidatedByBiometricEnrollment);
 
+        //Generate a cryptographic key using initialize method
         keyPairGenerator.initialize(builder.build());
 
         return keyPairGenerator.generateKeyPair();
@@ -209,7 +217,6 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
             public void onAuthenticationError(int errorCode, CharSequence errString) {
                 super.onAuthenticationError(errorCode, errString);
                 if (errorCode == BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT || errorCode == BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT) {
-
                     Toast.makeText(LoginActivity.this, errString, Toast.LENGTH_SHORT).show();
                 }
             }
