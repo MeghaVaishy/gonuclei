@@ -63,4 +63,9 @@ public class BiometricUtils {
         return ActivityCompat.checkSelfPermission(context, Manifest.permission.USE_FINGERPRINT) ==
                 PackageManager.PERMISSION_GRANTED;
     }
+
+    public  static  int currentBuild()
+    {
+        return Build.VERSION.SDK_INT;
+    }
 }

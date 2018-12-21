@@ -1,9 +1,12 @@
 package com.example.meghavaishy.demoapp.view;
 
+import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.KeyguardManager;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.Build;
@@ -15,12 +18,16 @@ import android.security.keystore.KeyProperties;
 import android.support.annotation.RequiresApi;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Base64;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.an.biometric.BiometricCallback;
@@ -29,6 +36,7 @@ import com.example.meghavaishy.demoapp.R;
 import com.example.meghavaishy.demoapp.utils.BiometricUtils;
 
 import java.io.IOException;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -45,30 +53,76 @@ import java.security.cert.CertificateException;
 import java.security.spec.ECGenParameterSpec;
 
 import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 
 public class LoginActivity extends AppCompatActivity implements View.OnClickListener {
-    private Button login;
     private KeyStore keyStore;
-    private Cipher cipher;
+    private Button login;
+    Cipher cipher;
+
     //  KEY_NAME is used to reference and find the generated key.
     private static final String KEY_NAME = "test";
     private BiometricPrompt mBiometricPrompt;
     private String mToBeSignedMessage;
     private static final String TAG = LoginActivity.class.getName();
+    private FingerprintManager fingerprintManager;
+    private KeyguardManager keyguardManager;
+    private RelativeLayout relativeLayout;
+    private FingerPrintHandler helper;
+    private TextView notCompatible;
 
 
+    @TargetApi(Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
         login = findViewById(R.id.login);
+        relativeLayout = findViewById(R.id.activity_fingerprint);
+        notCompatible = findViewById(R.id.desc);
         // setSupportActionBar(toolbar);
         login.setOnClickListener(this);
+        if (BiometricUtils.currentBuild() == Build.VERSION_CODES.P) {
+            login.setVisibility(View.VISIBLE);
+            relativeLayout.setVisibility(View.GONE);
+        } else {
+            login.setVisibility(View.GONE);
+            if (getSupportActionBar() != null) {
+                getSupportActionBar().hide();
+            }
+            relativeLayout.setVisibility(View.VISIBLE);
 
+            // For android version below P
+            if (!BiometricUtils.isHardwareSupported(this)) {
+                notCompatible.setText("Hardware Doesn't support");
+//                Toast.makeText(this, "Hardware Doesn't support", Toast.LENGTH_SHORT).show();
+            } else {
+                //Check that the user has registered at least one fingerprint
+                if (BiometricUtils.isFingerprintAvailable(this)) {
+                    // Initializing both Android Keyguard Manager and Fingerprint Manager
+                    KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                    fingerprintManager = (FingerprintManager) getSystemService(FINGERPRINT_SERVICE);
+                    try {
+                        generateKey();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                    if (cipherInit()) {
+                        FingerprintManager.CryptoObject cryptoObject = new FingerprintManager.CryptoObject(cipher);
+                        helper = new FingerPrintHandler(this);
+                        helper.startAuth(fingerprintManager, cryptoObject);
+                    }
+                } else {
+                    Toast.makeText(this, "No registered FingerPrint of user available on Device", Toast.LENGTH_SHORT).show();
+                }
+
+            }
+        }
 
     }
+
 
     @RequiresApi(api = Build.VERSION_CODES.P)
     @Override
@@ -79,34 +133,49 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
                 // use Biometric Api
                 displayBiometricPrompt();
 
-            } else {
-                // For android version below P
-                if (BiometricUtils.isSdkVersionSupported()) {
-                    if (!BiometricUtils.isHardwareSupported(this)) {
-                        Toast.makeText(this, "Hardware Doesn't support", Toast.LENGTH_SHORT).show();
-                    } else {
-                        //Check that the user has registered at least one fingerprint
-                        if (BiometricUtils.isFingerprintAvailable(this)) {
-
-                            //FingerprintManagerCompat API
-
-//                            generateKey();
-//                            if (cipherInit()) {
-//                                FingerprintManager.CryptoObject cryptoObject = new FingerprintManager.CryptoObject(cipher);
-//                                //FingerprintHandler helper = new FingerprintHandler(this);
-//                                //helper.startAuth(fingerprintManager, cryptoObject);
-//                            }
-
-
-                        } else {
-                            Toast.makeText(this, "No registered FingerPrint of user available on Device", Toast.LENGTH_SHORT).show();
-                        }
-
-                    }
-                }
             }
         }
+    }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private boolean cipherInit() {
+        try {
+            cipher = Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/" + KeyProperties.BLOCK_MODE_CBC + "/" + KeyProperties.ENCRYPTION_PADDING_PKCS7);
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+            throw new RuntimeException("Failed to get Cipher", e);
+        }
+
+
+        try {
+            keyStore.load(null);
+            SecretKey key = (SecretKey) keyStore.getKey(KEY_NAME,
+                    null);
+            cipher.init(Cipher.ENCRYPT_MODE, key);
+            return true;
+        } catch (KeyPermanentlyInvalidatedException e) {
+            return false;
+        } catch (KeyStoreException | CertificateException | UnrecoverableKeyException | IOException | NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new RuntimeException("Failed to init Cipher", e);
+        }
+    }
+
+
+    @TargetApi(Build.VERSION_CODES.M)
+    private void generateKey() throws Exception {
+        keyStore = KeyStore.getInstance("AndroidKeyStore");
+        KeyGenerator keyGenerator;
+        keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        keyStore.load(null);
+        keyGenerator.init(new
+                KeyGenParameterSpec.Builder(KEY_NAME,
+                KeyProperties.PURPOSE_ENCRYPT |
+                        KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
+                .setUserAuthenticationRequired(true)
+                .setEncryptionPaddings(
+                        KeyProperties.ENCRYPTION_PADDING_PKCS7)
+                .build());
+        keyGenerator.generateKey();
     }
 
     @RequiresApi(api = Build.VERSION_CODES.P)
@@ -174,7 +243,7 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
     }
 
     private KeyPair getKeyPair(String keyName) throws Exception {
-        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
         if (keyStore.containsAlias(keyName)) {
             // Get public key
@@ -189,7 +258,8 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
 
 
     @RequiresApi(api = Build.VERSION_CODES.P)
-    private KeyPair generateKeyPair(String keyName, boolean invalidatedByBiometricEnrollment) throws Exception {
+    private KeyPair generateKeyPair(String keyName, boolean invalidatedByBiometricEnrollment) throws
+            Exception {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
 
         KeyGenParameterSpec.Builder builder = new KeyGenParameterSpec.Builder(keyName,
@@ -207,6 +277,8 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
         keyPairGenerator.initialize(builder.build());
 
         return keyPairGenerator.generateKeyPair();
+
+
     }
 
     @RequiresApi(api = Build.VERSION_CODES.P)
@@ -265,5 +337,16 @@ public class LoginActivity extends AppCompatActivity implements View.OnClickList
         return cancellationSignal;
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (helper != null)
+            helper.cancel();
+    }
 
+    @Override
+    protected void onStop() {
+        super.onStop();
+        finish();
+    }
 }
